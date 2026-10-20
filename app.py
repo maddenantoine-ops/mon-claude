@@ -50,7 +50,7 @@ def find_file_ids(obj, found=None):
 
 def ask_claude(user_blocks):
     ss.api_messages.append({"role": "user", "content": user_blocks})
-    text_parts, file_ids = [], []
+    text_parts, file_ids, used_model = [], [], MODEL
     while True:
         container = {"skills": SKILLS}
         if ss.container_id:
@@ -64,6 +64,7 @@ def ask_claude(user_blocks):
             tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
             messages=ss.api_messages,
         )
+        used_model = resp.model
         if resp.container:
             ss.container_id = resp.container.id
         ss.api_messages.append({"role": "assistant", "content": resp.content})
@@ -82,7 +83,7 @@ def ask_claude(user_blocks):
             files.append({"name": meta.filename, "data": data})
         except Exception:
             pass  # fichiers d'entrée ou non téléchargeables
-    return "\n\n".join(text_parts), files
+    return "\n\n".join(text_parts), files, used_model
 
 
 # ---- Barre latérale ----
@@ -92,20 +93,22 @@ with st.sidebar:
             ss.pop(k, None)
         ss.uploader_n += 1
         st.rerun()
-    uploads = st.file_uploader(
-        "Joindre des fichiers", accept_multiple_files=True, key=f"up{ss.uploader_n}"
-    )
+    st.caption(f"Modèle demandé : {MODEL}")
 
 st.title("💬 Mon Claude")
 
 for i, m in enumerate(ss.display):
     with st.chat_message(m["role"]):
         st.markdown(m["text"])
+        if m.get("model"):
+            st.caption(f"Modèle : {m['model']}")
         for j, f in enumerate(m.get("files", [])):
             st.download_button(f"⬇️ {f['name']}", f["data"], file_name=f["name"], key=f"d{i}_{j}")
 
-prompt = st.chat_input("Écris ton message…")
-if prompt:
+chat = st.chat_input("Écris ton message… (le trombone 📎 permet de joindre des fichiers)", accept_file="multiple")
+if chat:
+    prompt = chat.text or "Voici mes fichiers."
+    uploads = chat.files
     blocks = []
     for up in uploads or []:
         meta = client.beta.files.upload(file=(up.name, up.getvalue(), up.type or "application/octet-stream"))
@@ -119,10 +122,9 @@ if prompt:
     with st.chat_message("assistant"):
         with st.spinner("Claude réfléchit…"):
             try:
-                text, files = ask_claude(blocks)
+                text, files, used_model = ask_claude(blocks)
             except Exception as e:
-                text, files = f"⚠️ Erreur : {e}", []
+                text, files, used_model = f"⚠️ Erreur : {e}", [], None
         st.markdown(text)
-    ss.display.append({"role": "assistant", "text": text, "files": files})
-    ss.uploader_n += 1
+    ss.display.append({"role": "assistant", "text": text, "files": files, "model": used_model})
     st.rerun()

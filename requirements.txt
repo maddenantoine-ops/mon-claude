@@ -1,2 +1,6 @@
 streamlit>=1.43
-anthropic
+openai>=1.50
+openpyxl
+python-docx
+pypdf
+pandas
